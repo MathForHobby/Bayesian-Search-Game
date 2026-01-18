@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import koreanize_matplotlib
 
 # 1. 페이지 설정
 st.set_page_config(page_title="베이지안 지형 탐색 게임", layout="wide")
