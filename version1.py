@@ -3,11 +3,10 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import koreanize_matplotlib # 한글 깨짐 방지
+import koreanize_matplotlib
 
 # 1. 페이지 설정
 st.set_page_config(page_title="베이지안 지형 탐색 게임", layout="wide")
-st.title("🗺️ 베이지안 지형 탐색: 사라진 보물을 찾아라!")
 
 # 2. 지형 및 확률 상수 설정
 TERRAIN_TYPES = np.array([
@@ -20,7 +19,7 @@ TERRAIN_TYPES = np.array([
 TERRAIN_PRIORS = {"산": 0.5 / 6, "평지": 0.3 / 5, "바다": 0.2 / 5}
 TERRAIN_DETECTION = {"산": 0.5, "평지": 0.9, "바다": 0.3}
 
-# 3. 초기화 함수 (모든 세션 상태를 한 번에 정의)
+# 3. 초기화 함수
 def reset_game():
     init_p = np.zeros((4, 4))
     for i in range(4):
@@ -34,23 +33,38 @@ def reset_game():
     st.session_state.treasure_pos = (chosen_idx // 4, chosen_idx % 4)
     
     st.session_state.game_over = False
-    st.session_state.history = [] # 활동 기록 초기화
+    st.session_state.attempts = 0 # 현재 수색 횟수
+    st.session_state.history = []
     st.session_state.message = "게임을 시작합니다! 보물이 숨겨졌습니다."
+    st.session_state.win = False
 
-# 앱 시작 시 세션 상태가 없으면 초기화 실행
-if 'prior' not in st.session_state or 'history' not in st.session_state:
+# 앱 시작 시 세션 상태 초기화
+if 'prior' not in st.session_state:
     reset_game()
+
+# --- 사이드바: 설정 영역 ---
+with st.sidebar:
+    st.header("⚙️ 게임 설정")
+    max_attempts = st.number_input("최대 수색 기회 설정", min_value=1, max_value=20, value=10)
+    st.write("---")
+    if st.button("🔄 새 게임 시작 (보물 재배치)", type="primary"):
+        reset_game()
+        st.rerun()
+    st.write(f"현재 수색: **{st.session_state.attempts} / {max_attempts}**")
 
 # 4. 베이지안 업데이트 로직
 def probe_cell(r, c):
     if st.session_state.game_over:
         return
 
+    st.session_state.attempts += 1
+    
     # 보물 확인 (성공률 반영)
     if (r, c) == st.session_state.treasure_pos:
         terrain = TERRAIN_TYPES[r, c]
         if np.random.random() < TERRAIN_DETECTION[terrain]:
             st.session_state.game_over = True
+            st.session_state.win = True
             st.session_state.message = f"🎊 축하합니다! {terrain} {chr(65+r)}{c+1}에서 보물을 찾았습니다!"
             return
     
@@ -69,14 +83,34 @@ def probe_cell(r, c):
     
     st.session_state.prior = new_p
     st.session_state.history.append(f"{TERRAIN_TYPES[r, c]} {chr(65+r)}{c+1} 수색 실패")
-    st.session_state.message = f"아쉽네요. {TERRAIN_TYPES[r, c]} {chr(65+r)}{c+1}에는 없거나 발견하지 못했습니다."
+    
+    # 기회 소진 확인
+    if st.session_state.attempts >= max_attempts:
+        st.session_state.game_over = True
+        st.session_state.win = False
+        tr_r, tr_c = st.session_state.treasure_pos
+        st.session_state.message = f"🚫 기회 소진! 보물은 {TERRAIN_TYPES[tr_r, tr_c]} {chr(65+tr_r)}{tr_c+1}에 있었습니다."
+    else:
+        st.session_state.message = f"아쉽네요. {TERRAIN_TYPES[r, c]} {chr(65+r)}{c+1}에는 없거나 발견하지 못했습니다."
 
-# 5. UI 레이아웃
+# 5. 메인 UI 레이아웃
+st.title("🗺️ 베이지안 탐색: 보물찾기 시뮬레이션")
+
+if st.session_state.win:
+    st.balloons() # 성공 시 풍선 효과
+
 col1, col2 = st.columns([1, 1.3])
 
 with col1:
     st.subheader("🕹️ 수색 지역 선택")
-    st.info(st.session_state.message)
+    if st.session_state.game_over:
+        if st.session_state.win:
+            st.success(st.session_state.message)
+        else:
+            st.error(st.session_state.message)
+    else:
+        st.info(st.session_state.message)
+        st.warning(f"남은 기회: **{max_attempts - st.session_state.attempts}회**")
     
     rows = ["A", "B", "C", "D"]
     for i in range(4):
@@ -84,36 +118,34 @@ with col1:
         for j in range(4):
             terrain = TERRAIN_TYPES[i, j]
             label = f"{terrain}\n{rows[i]}{j+1}"
+            # 게임 오버 시 버튼 비활성화
             if cols[j].button(label, key=f"btn_{i}_{j}", use_container_width=True, disabled=st.session_state.game_over):
                 probe_cell(i, j)
                 st.rerun()
-    
-    if st.button("🔄 게임 리셋 / 보물 재배치", type="primary"):
-        reset_game()
-        st.rerun()
 
     st.write("---")
     st.write("**최근 활동:**")
-    # history가 없을 경우를 대비해 안전하게 출력
-    history_list = st.session_state.get('history', [])
-    for log in history_list[-3:]:
+    for log in st.session_state.history[-3:]:
         st.write(f"- {log}")
 
 with col2:
     st.subheader("📊 실시간 확률 분포 지도")
     
-    # 텍스트 레이블 생성 (지형 이름 + ID + 확률)
     display_labels = []
     for i in range(4):
         row_labels = []
         for j in range(4):
             terrain = TERRAIN_TYPES[i, j]
             prob = st.session_state.prior[i, j] * 100
-            label = f"{terrain}\n({rows[i]}{j+1})\n{prob:.1f}%"
+            # 게임 오버 시 실제 보물 위치 표시 기능 추가
+            is_treasure = (i, j) == st.session_state.treasure_pos and st.session_state.game_over
+            tr_marker = "\n💎(여기!)" if is_treasure else ""
+            label = f"{terrain}\n({rows[i]}{j+1})\n{prob:.1f}%{tr_marker}"
             row_labels.append(label)
         display_labels.append(row_labels)
     
     fig, ax = plt.subplots(figsize=(10, 8))
+    # 보물 발견 시 해당 칸을 강조하기 위해 색상 맵 조정 가능
     sns.heatmap(
         st.session_state.prior * 100, 
         annot=np.array(display_labels), 
@@ -126,11 +158,10 @@ with col2:
     plt.ylabel("행 (A-D)")
     st.pyplot(fig)
 
-# 지형별 특성 안내 표 (오타 수정됨)
 with st.expander("📝 지형별 데이터 정보"):
     st.table(pd.DataFrame({
         "지형": ["산", "평지", "바다"],
         "전체 확률": ["50%", "30%", "20%"],
-        "탐색 성공률(우도)": ["50%", "90%", "30%"],
-        "설명": ["유력하지만 수색이 어려움", "확률은 보통이나 수색이 쉬움", "가능성은 낮고 수색도 어려움"]
+        "탐색 성공률": ["50%", "90%", "30%"],
+        "특징": ["가장 유력함, 발견 어려움", "중간 확률, 발견 매우 쉬움", "낮은 확률, 발견 매우 어려움"]
     }))
