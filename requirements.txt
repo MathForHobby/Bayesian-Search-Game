@@ -3,4 +3,4 @@ numpy
 pandas
 seaborn
 matplotlib
-koreanize-matplotlib
+koreanize_matplotlib
