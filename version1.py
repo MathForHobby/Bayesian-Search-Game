@@ -131,33 +131,44 @@ with col1:
 with col2:
     st.subheader("📊 실시간 확률 분포 지도")
     
+    # 텍스트 레이블 생성
     display_labels = []
     for i in range(4):
         row_labels = []
         for j in range(4):
             terrain = TERRAIN_TYPES[i, j]
             prob = st.session_state.prior[i, j] * 100
-            # 게임 오버 시 실제 보물 위치 표시 기능 추가
             is_treasure = (i, j) == st.session_state.treasure_pos and st.session_state.game_over
             tr_marker = "\n💎(여기!)" if is_treasure else ""
             label = f"{terrain}\n({rows[i]}{j+1})\n{prob:.1f}%{tr_marker}"
             row_labels.append(label)
         display_labels.append(row_labels)
     
-    fig, ax = plt.subplots(figsize=(10, 8))
-    # 보물 발견 시 해당 칸을 강조하기 위해 색상 맵 조정 가능
+    # 그래프 크기를 조금 더 키움 (10, 8 -> 12, 10)
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
     sns.heatmap(
         st.session_state.prior * 100, 
         annot=np.array(display_labels), 
         fmt="", 
         cmap="YlOrRd", 
         ax=ax,
-        cbar_kws={'label': '보물 존재 확률 (%)'}
+        cbar_kws={'label': '보물 존재 확률 (%)'},
+        # --- 폰트 크기 수정 부분 ---
+        annot_kws={
+            "size": 18,          # 글자 크기를 18로 키움 (기본보다 훨씬 크게)
+            "weight": "bold",    # 글자를 굵게 설정
+            "va": "center"       # 수직 정렬 중앙
+        }
+        # ------------------------
     )
-    plt.xlabel("열 (1-4)")
-    plt.ylabel("행 (A-D)")
+    
+    # 축(A-D, 1-4) 글자 크기도 키우기
+    ax.tick_params(axis='both', which='major', labelsize=15)
+    plt.xlabel("열 (1-4)", fontsize=15)
+    plt.ylabel("행 (A-D)", fontsize=15)
+    
     st.pyplot(fig)
-
 with st.expander("📝 지형별 데이터 정보"):
     st.table(pd.DataFrame({
         "지형": ["산", "평지", "바다"],
