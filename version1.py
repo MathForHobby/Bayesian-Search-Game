@@ -17,7 +17,7 @@ TERRAIN_TYPES = np.array([
 ])
 
 TERRAIN_PRIORS = {"산": 0.5 / 6, "평지": 0.3 / 5, "바다": 0.2 / 5}
-TERRAIN_DETECTION = {"산": 0.7, "평지": 0.9, "바다": 0.5}
+TERRAIN_DETECTION = {"산": 0.5, "평지": 0.9, "바다": 0.3}
 
 # 3. 초기화 함수
 def reset_game():
@@ -33,10 +33,13 @@ def reset_game():
     st.session_state.treasure_pos = (chosen_idx // 4, chosen_idx % 4)
     
     st.session_state.game_over = False
-    st.session_state.attempts = 0 # 현재 수색 횟수
+    st.session_state.attempts = 0
     st.session_state.history = []
     st.session_state.message = "게임을 시작합니다! 보물이 숨겨졌습니다."
     st.session_state.win = False
+    # 확률 표시 여부 초기화 (기본: 숨김)
+    if 'show_prob' not in st.session_state:
+        st.session_state.show_prob = False
 
 # 앱 시작 시 세션 상태 초기화
 if 'prior' not in st.session_state:
@@ -46,6 +49,14 @@ if 'prior' not in st.session_state:
 with st.sidebar:
     st.header("⚙️ 게임 설정")
     max_attempts = st.number_input("최대 수색 기회 설정", min_value=1, max_value=20, value=10)
+    
+    st.write("---")
+    # 확률 보기 토글 버튼
+    if st.button("👁️ 확률 확인 / 숨기기"):
+        st.session_state.show_prob = not st.session_state.show_prob
+    
+    st.write(f"현재 확률 표시: **{'ON' if st.session_state.show_prob else 'OFF'}**")
+    
     st.write("---")
     if st.button("🔄 새 게임 시작 (보물 재배치)", type="primary"):
         reset_game()
@@ -65,6 +76,7 @@ def probe_cell(r, c):
         if np.random.random() < TERRAIN_DETECTION[terrain]:
             st.session_state.game_over = True
             st.session_state.win = True
+            st.session_state.show_prob = True # 승리 시 확률 자동 공개
             st.session_state.message = f"🎊 축하합니다! {terrain} {chr(65+r)}{c+1}에서 보물을 찾았습니다!"
             return
     
@@ -88,6 +100,7 @@ def probe_cell(r, c):
     if st.session_state.attempts >= max_attempts:
         st.session_state.game_over = True
         st.session_state.win = False
+        st.session_state.show_prob = True # 종료 시 확률 자동 공개
         tr_r, tr_c = st.session_state.treasure_pos
         st.session_state.message = f"🚫 기회 소진! 보물은 {TERRAIN_TYPES[tr_r, tr_c]} {chr(65+tr_r)}{tr_c+1}에 있었습니다."
     else:
@@ -97,7 +110,7 @@ def probe_cell(r, c):
 st.title("🗺️ 베이지안 탐색: 보물찾기 시뮬레이션")
 
 if st.session_state.win:
-    st.balloons() # 성공 시 풍선 효과
+    st.balloons()
 
 col1, col2 = st.columns([1, 1.3])
 
@@ -118,20 +131,19 @@ with col1:
         for j in range(4):
             terrain = TERRAIN_TYPES[i, j]
             label = f"{terrain}\n{rows[i]}{j+1}"
-            # 게임 오버 시 버튼 비활성화
             if cols[j].button(label, key=f"btn_{i}_{j}", use_container_width=True, disabled=st.session_state.game_over):
                 probe_cell(i, j)
                 st.rerun()
 
     st.write("---")
     st.write("**최근 활동:**")
-    for log in st.session_state.history[-3:]:
+    history_list = st.session_state.get('history', [])
+    for log in history_list[-3:]:
         st.write(f"- {log}")
 
 with col2:
     st.subheader("📊 실시간 확률 분포 지도")
     
-    # 텍스트 레이블 생성
     display_labels = []
     for i in range(4):
         row_labels = []
@@ -140,13 +152,17 @@ with col2:
             prob = st.session_state.prior[i, j] * 100
             is_treasure = (i, j) == st.session_state.treasure_pos and st.session_state.game_over
             tr_marker = "\n💎(여기!)" if is_treasure else ""
-            label = f"{terrain}\n({rows[i]}{j+1})\n{prob:.1f}%{tr_marker}"
+            
+            # --- 확률 표시 여부 로직 ---
+            if st.session_state.show_prob:
+                label = f"{terrain}\n({rows[i]}{j+1})\n{prob:.1f}%{tr_marker}"
+            else:
+                label = f"{terrain}\n({rows[i]}{j+1}){tr_marker}"
+            
             row_labels.append(label)
         display_labels.append(row_labels)
     
-    # 그래프 크기를 조금 더 키움 (10, 8 -> 12, 10)
     fig, ax = plt.subplots(figsize=(12, 10))
-    
     sns.heatmap(
         st.session_state.prior * 100, 
         annot=np.array(display_labels), 
@@ -154,25 +170,17 @@ with col2:
         cmap="YlOrRd", 
         ax=ax,
         cbar_kws={'label': '보물 존재 확률 (%)'},
-        # --- 폰트 크기 수정 부분 ---
-        annot_kws={
-            "size": 20,          # 글자 크기를 20로 키움 (기본보다 훨씬 크게)
-            "weight": "bold",    # 글자를 굵게 설정
-            "va": "center"       # 수직 정렬 중앙
-        }
-        # ------------------------
+        annot_kws={"size": 18, "weight": "bold", "va": "center"}
     )
-    
-    # 축(A-D, 1-4) 글자 크기도 키우기
     ax.tick_params(axis='both', which='major', labelsize=15)
     plt.xlabel("열 (1-4)", fontsize=15)
     plt.ylabel("행 (A-D)", fontsize=15)
-    
     st.pyplot(fig)
+
 with st.expander("📝 지형별 데이터 정보"):
     st.table(pd.DataFrame({
         "지형": ["산", "평지", "바다"],
         "전체 확률": ["50%", "30%", "20%"],
-        "탐색 성공률": ["70%", "90%", "50%"],
+        "탐색 성공률": ["50%", "90%", "30%"],
         "특징": ["가장 유력함, 발견 어려움", "중간 확률, 발견 매우 쉬움", "낮은 확률, 발견 매우 어려움"]
     }))
