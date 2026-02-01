@@ -37,9 +37,10 @@ def reset_game():
     st.session_state.history = []
     st.session_state.message = "게임을 시작합니다! 보물이 숨겨졌습니다."
     st.session_state.win = False
-    # 확률 표시 여부 초기화 (기본: 숨김)
-    if 'show_prob' not in st.session_state:
-        st.session_state.show_prob = False
+    
+    # 설정 초기화
+    st.session_state.show_prob = False       # 확률 및 색상 표시 여부
+    st.session_state.reveal_treasure = False # 보물 위치 강제 공개 여부
 
 # 앱 시작 시 세션 상태 초기화
 if 'prior' not in st.session_state:
@@ -51,14 +52,19 @@ with st.sidebar:
     max_attempts = st.number_input("최대 수색 기회 설정", min_value=1, max_value=20, value=10)
     
     st.write("---")
-    # 확률 보기 토글 버튼
-    if st.button("👁️ 확률 확인 / 숨기기"):
+    # 기능 1: 확률 및 색상 토글
+    if st.button("👁️ 확률 및 색상 On/Off"):
         st.session_state.show_prob = not st.session_state.show_prob
     
-    st.write(f"현재 확률 표시: **{'ON' if st.session_state.show_prob else 'OFF'}**")
+    # 기능 2: 보물 위치 보기 토글
+    if st.button("💎 보물 위치 확인/숨기기"):
+        st.session_state.reveal_treasure = not st.session_state.reveal_treasure
+    
+    st.write(f"확률/색상 표시: **{'ON' if st.session_state.show_prob else 'OFF'}**")
+    st.write(f"보물 위치 공개: **{'ON' if st.session_state.reveal_treasure else 'OFF'}**")
     
     st.write("---")
-    if st.button("🔄 새 게임 시작 (보물 재배치)", type="primary"):
+    if st.button("🔄 새 게임 시작 (리셋)", type="primary"):
         reset_game()
         st.rerun()
     st.write(f"현재 수색: **{st.session_state.attempts} / {max_attempts}**")
@@ -76,7 +82,7 @@ def probe_cell(r, c):
         if np.random.random() < TERRAIN_DETECTION[terrain]:
             st.session_state.game_over = True
             st.session_state.win = True
-            st.session_state.show_prob = True # 승리 시 확률 자동 공개
+            st.session_state.show_prob = True # 승리 시 자동 공개
             st.session_state.message = f"🎊 축하합니다! {terrain} {chr(65+r)}{c+1}에서 보물을 찾았습니다!"
             return
     
@@ -100,7 +106,8 @@ def probe_cell(r, c):
     if st.session_state.attempts >= max_attempts:
         st.session_state.game_over = True
         st.session_state.win = False
-        st.session_state.show_prob = True # 종료 시 확률 자동 공개
+        st.session_state.show_prob = True
+        st.session_state.reveal_treasure = True # 종료 시 보물 위치 공개
         tr_r, tr_c = st.session_state.treasure_pos
         st.session_state.message = f"🚫 기회 소진! 보물은 {TERRAIN_TYPES[tr_r, tr_c]} {chr(65+tr_r)}{tr_c+1}에 있었습니다."
     else:
@@ -144,16 +151,26 @@ with col1:
 with col2:
     st.subheader("📊 실시간 확률 분포 지도")
     
+    # 텍스트 및 히트맵 데이터 준비
     display_labels = []
+    # 확률 표시가 꺼져 있으면 히트맵을 단색(0)으로 표시
+    if st.session_state.show_prob:
+        heatmap_data = st.session_state.prior * 100
+        cbar_on = True
+    else:
+        heatmap_data = np.zeros((4, 4)) # 모두 동일한 색상
+        cbar_on = False
+
     for i in range(4):
         row_labels = []
         for j in range(4):
             terrain = TERRAIN_TYPES[i, j]
             prob = st.session_state.prior[i, j] * 100
-            is_treasure = (i, j) == st.session_state.treasure_pos and st.session_state.game_over
+            
+            # 보물 위치 공개 조건: 게임 종료 또는 '보물 위치 보기' 활성화
+            is_treasure = (i, j) == st.session_state.treasure_pos and (st.session_state.game_over or st.session_state.reveal_treasure)
             tr_marker = "\n💎(여기!)" if is_treasure else ""
             
-            # --- 확률 표시 여부 로직 ---
             if st.session_state.show_prob:
                 label = f"{terrain}\n({rows[i]}{j+1})\n{prob:.1f}%{tr_marker}"
             else:
@@ -164,12 +181,14 @@ with col2:
     
     fig, ax = plt.subplots(figsize=(12, 10))
     sns.heatmap(
-        st.session_state.prior * 100, 
+        heatmap_data, 
         annot=np.array(display_labels), 
         fmt="", 
         cmap="YlOrRd", 
         ax=ax,
-        cbar_kws={'label': '보물 존재 확률 (%)'},
+        cbar=cbar_on,
+        # 확률이 꺼져 있을 때 색상이 변하지 않도록 범위 고정
+        vmin=0, vmax=100 if st.session_state.show_prob else 1,
         annot_kws={"size": 18, "weight": "bold", "va": "center"}
     )
     ax.tick_params(axis='both', which='major', labelsize=15)
