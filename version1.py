@@ -169,7 +169,7 @@ with col2:
             
             # 보물 위치 공개 조건: 게임 종료 또는 '보물 위치 보기' 활성화
             is_treasure = (i, j) == st.session_state.treasure_pos and (st.session_state.game_over or st.session_state.reveal_treasure)
-            tr_marker = "\n💎(여기!)" if is_treasure else ""
+            tr_marker = "\n★(여기!)" if is_treasure else ""
             
             if st.session_state.show_prob:
                 label = f"{terrain}\n({rows[i]}{j+1})\n{prob:.1f}%{tr_marker}"
